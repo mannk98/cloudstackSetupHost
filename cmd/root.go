@@ -8,8 +8,10 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/mannk98/goutils/sqlutils"
 	"github.com/mannk98/goutils/utils"
 	log "github.com/sirupsen/logrus"
@@ -131,39 +133,48 @@ func rootRun(cmd *cobra.Command, args []string) {
 		if err != nil {
 			Logger.Errorf("can't connect to Mysqldb at %s: %v", err, mysqlHost)
 		} else {
-			var ListHostUUID []string
-			// set new variable
-			/* 			newUuid, _ := uuid.NewRandom()
-			   			newUuidString := newUuid.String()
-			   			host_uuid := "cloudstack" + newUuidString[8:]
-			   			host_guid := host_uuid + "-LibvirtComputingResource" */
-
-			mysqlconnection.QueryRow("select uuid from host").Scan(&ListHostUUID)
-			for _, v := range ListHostUUID {
-				fmt.Println(v)
+			//	var uuids []string
+			var guids []string
+			rows, err := mysqlconnection.Query("SELECT guid FROM host")
+			if err != nil {
+				Logger.Error(err)
+			}
+			defer rows.Close()
+			for rows.Next() {
+				var uuid string
+				if err := rows.Scan(&uuid); err != nil {
+					Logger.Error(err)
+				}
+				guids = append(guids, uuid)
+			}
+			if err := rows.Err(); err != nil {
+				log.Fatal(err)
 			}
 
-			/* 			queryRam := fmt.Sprintf("select ram from host where name = '%s';", defaultHostName)
-			   			queryCpu := fmt.Sprintf("select cpus from host where name = '%s';", defaultHostName)
+			//fmt.Println("UUIDs:", guids)
 
-			   			var realCpus, realRam int
-			   			mysqlconnection.QueryRow(queryCpu).Scan(&realCpus)
-			   			mysqlconnection.QueryRow(queryRam).Scan(&realRam)
-
-			   			//updateHostName := fmt.Sprintf(" update host set name = 'newHost-%s' where uuid = '%s';", host_uuid.String(), host_uuid.String())
-
-			   			updateUUID := fmt.Sprintf("update host set uuid = '%s', guid = '%s', ram = %d, cpus = %d where name = 'cloudstack';", host_uuid, host_guid, realRam*3, realCpus*3)
-			   			_, err := MysqlExec(mysqlconnection, updateUUID)
-			   			if err != nil {
-			   				Logger.Errorf("failed update Uuid using command: %s, Error: %v", updateUUID, err)
-			   			} */
-			/* 				_, err = MysqlExec(mysqlconnection, updateHostName)
-			   				if err != nil {
-			   					Logger.Errorf("failed update Uuid using command: %s, Error: %v", updateHostName, err)
-			   				} */
-
+			// set new variable
+			for _, guid := range guids {
+				newUuid, _ := uuid.NewRandom()
+				newUuidString := newUuid.String()
+				host_uuid := "cloudstack" + newUuidString[8:]
+				host_guid := host_uuid + "-LibvirtComputingResource"
+				//fmt.Println(v)
+				if !strings.Contains(guid, "cloudstack") && strings.Contains(guid, "LibvirtComputingResource") {
+					queryRam := fmt.Sprintf("select ram from host where guid = '%s';", guid)
+					queryCpu := fmt.Sprintf("select cpus from host where guid = '%s';", guid)
+					var realCpus, realRam int
+					mysqlconnection.QueryRow(queryCpu).Scan(&realCpus)
+					mysqlconnection.QueryRow(queryRam).Scan(&realRam)
+					fmt.Println(realCpus, realRam)
+					updateUUIDquery := fmt.Sprintf("update host set uuid = '%s', guid = '%s', ram = %d, cpus = %d where guid = '%s';", host_uuid, host_guid, realRam*3, realCpus*3, guid)
+					_, err := MysqlExec(mysqlconnection, updateUUIDquery)
+					if err != nil {
+						Logger.Errorf("failed update Uuid using command: %s, Error: %v", updateUUIDquery, err)
+					}
+				}
+			}
 		}
-
 	}
 	sched.Every(runInterval).ESeconds().Run(job)
 	// Keep the program from not exiting.

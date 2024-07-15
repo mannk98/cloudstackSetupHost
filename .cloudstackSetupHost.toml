@@ -1,5 +1,4 @@
 mysqlHost = 'localhost'
 mysqlUser = 'cloudstackuser'
 mysqlPassword = 'cs123'
-defaultHostName = 'cloudstack-agentkvm'
 runInterval = '40' # s
