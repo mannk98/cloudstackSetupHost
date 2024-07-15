@@ -1,0 +1,1 @@
+{"file":"/home/mannk/go/src/cloudstackSetupHost/cmd/root.go:91","func":"cloudstackSetupHost/cmd.initConfig","level":"error","msg":"While parsing config: toml: incomplete number","time":"2024-07-15T11:10:46+07:00"}
