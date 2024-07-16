@@ -108,16 +108,20 @@ func rootRun(cmd *cobra.Command, args []string) {
 	mysqlHost := viper.GetString("mysqlHost")
 	//defaultHostName := viper.GetString("defaultHostName")
 	runInterval := viper.GetInt("runInterval")
+	fixRam := viper.GetInt("hostRam")
+	fixCpus := viper.GetInt("hostCpus")
 
 	var mysqlconnection *sql.DB
 	var err error
+	mysqlCfg := sqlutils.MysqlInitConfig(mysqlUser, mysqlPassword, mysqlHost, "3306", "cloud")
 	for {
-		mysqlCfg := sqlutils.MysqlInitConfig(mysqlUser, mysqlPassword, mysqlHost, "3306", "cloud")
 		mysqlconnection, err = sqlutils.MysqlPing(mysqlCfg)
 		if err != nil {
 			Logger.Errorf("can't connect to Mysqldb at %s: %v", err, mysqlHost)
+			mysqlconnection.Close()
 			time.Sleep(5 * time.Second)
 		} else {
+			// keep connection if success
 			break
 		}
 	}
@@ -161,20 +165,27 @@ func rootRun(cmd *cobra.Command, args []string) {
 				host_guid := host_uuid + "-LibvirtComputingResource"
 				//fmt.Println(v)
 				if !strings.Contains(guid, "cloudstack") && strings.Contains(guid, "LibvirtComputingResource") {
-					queryRam := fmt.Sprintf("select ram from host where guid = '%s';", guid)
-					queryCpu := fmt.Sprintf("select cpus from host where guid = '%s';", guid)
-					var realCpus, realRam int
-					mysqlconnection.QueryRow(queryCpu).Scan(&realCpus)
-					mysqlconnection.QueryRow(queryRam).Scan(&realRam)
-					fmt.Println(realCpus, realRam)
-					updateUUIDquery := fmt.Sprintf("update host set uuid = '%s', guid = '%s', ram = %d, cpus = %d where guid = '%s';", host_uuid, host_guid, realRam*3, realCpus*3, guid)
+					//queryRam := fmt.Sprintf("select ram from host where guid = '%s';", guid)
+					//queryCpu := fmt.Sprintf("select cpus from host where guid = '%s';", guid)
+					//var realCpus, realRam int
+					//mysqlconnection.QueryRow(queryCpu).Scan(&realCpus)
+					//mysqlconnection.QueryRow(queryRam).Scan(&realRam)
+					//fmt.Println(realCpus, realRam)
+					updateUUIDquery := fmt.Sprintf("update host set uuid = '%s', guid = '%s' where guid = '%s';", host_uuid, host_guid, guid)
 					_, err := MysqlExec(mysqlconnection, updateUUIDquery)
 					if err != nil {
 						Logger.Errorf("failed update Uuid using command: %s, Error: %v", updateUUIDquery, err)
 					}
 				}
+
+				updateRamCpus := fmt.Sprintf("update host set ram = %d, cpus = %d where guid = '%s';", fixRam, fixCpus, guid)
+				_, err := MysqlExec(mysqlconnection, updateRamCpus)
+				if err != nil {
+					Logger.Errorf("failed update Uuid using command: %s, Error: %v", updateRamCpus, err)
+				}
 			}
 		}
+		defer mysqlconnection.Close()
 	}
 	sched.Every(runInterval).ESeconds().Run(job)
 	// Keep the program from not exiting.
