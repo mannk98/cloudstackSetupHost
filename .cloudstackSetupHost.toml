@@ -1,7 +1,7 @@
 mysqlHost = 'localhost'
 mysqlUser = 'cloudstackuser'
 mysqlPassword = 'cs123'
-runInterval = '30' # s
+runInterval = '45' # s
 
 #host ram,cpus fixed
 hostRam = 250000000000 # byte
