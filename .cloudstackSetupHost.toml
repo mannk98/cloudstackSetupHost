@@ -4,5 +4,5 @@ mysqlPassword = 'cs123'
 runInterval = '45' # s
 
 #host ram,cpus fixed
-hostRam = 250000000000 # byte
-hostCpus = 128 # core
+hostRam = 512000000000 # byte
+hostCpus = 256 # core
