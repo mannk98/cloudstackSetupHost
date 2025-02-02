@@ -27,7 +27,6 @@ var (
 	cfgFileDefault = ".cloudstackSetupHost"
 )
 
-// rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
 	Use:   "cloudstackSetupHost",
 	Short: "A brief description of your application",
@@ -37,13 +36,10 @@ examples and usage of using your application. For example:
 Cobra is a CLI library for Go that empowers applications.
 This application is a tool to generate the needed files
 to quickly create a Cobra application.`,
-	// Uncomment the following line if your bare application
-	// has an action associated with it:
+
 	Run: rootRun,
 }
 
-// Execute adds all child commands to the root command and sets flags appropriately.
-// This is called by main.main(). It only needs to happen once to the rootCmd.
 func Execute() {
 	err := rootCmd.Execute()
 	if err != nil {
@@ -55,24 +51,14 @@ func init() {
 	utils.InitLogger(LogFile, Logger, LogLevel)
 	cobra.OnInitialize(initConfig)
 
-	// Here you will define your flags and configuration settings.
-	// Cobra supports persistent flags, which, if defined here,
-	// will be global for your application.
-
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.cloudstackSetupHost.toml)")
-
-	// Cobra also supports local flags, which will only run
-	// when this action is called directly.
 	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 }
 
-// initConfig reads in config file and ENV variables if set.
 func initConfig() {
 	if cfgFile != "" {
-		// Use config file from the flag.
 		viper.SetConfigFile(cfgFile)
 	} else {
-		// Find home directory.
 		home, err := os.UserHomeDir()
 		if err != nil {
 			Logger.Error(err)
@@ -80,7 +66,6 @@ func initConfig() {
 		}
 
 		cfgFile = cfgFileDefault
-		// Search config in home directory with name ".cloudstackSetupHost" (without extension).
 		viper.AddConfigPath(home)
 		viper.AddConfigPath("./")
 		viper.SetConfigType("toml")
@@ -91,7 +76,7 @@ func initConfig() {
 
 	if err := viper.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
-			log.Error("config.toml file at ./ folder is not exist. Create it first.")
+			log.Errorf("%s file at ./ folder is not exist. Create it first.", cfgFileDefault)
 		} else {
 			Logger.Error(err)
 		}
@@ -104,19 +89,21 @@ func rootRun(cmd *cobra.Command, args []string) {
 	mysqlUser := viper.GetString("mysqlUser")
 	mysqlPassword := viper.GetString("mysqlPassword")
 	mysqlHost := viper.GetString("mysqlHost")
-	//defaultHostName := viper.GetString("defaultHostName")
 	runInterval := viper.GetInt("runInterval")
 	fixRam := viper.GetInt("hostRam")
 	fixCpus := viper.GetInt("hostCpus")
 
-	var mysqlconnection *sql.DB
+	var mydb *sql.DB
 	var err error
 	mysqlCfg := sqlutils.MysqlInitConfig(mysqlUser, mysqlPassword, mysqlHost, "3306", "cloud")
 	for {
-		mysqlconnection, err = sqlutils.MysqlPing(mysqlCfg)
+		mydb, err = sqlutils.MysqlPing(mysqlCfg)
 		if err != nil {
-			Logger.Errorf("can't connect to Mysqldb at %s: %v", err, mysqlHost)
-			mysqlconnection.Close()
+			Logger.Errorf("can't connect to Mysqldb at %s: %v, retry after 5 seconds...", err, mysqlHost)
+			err := mydb.Close()
+			if err != nil {
+				Logger.Errorf("error when close mysql connection: %v", err)
+			}
 			time.Sleep(5 * time.Second)
 		} else {
 			// keep connection if success
@@ -124,7 +111,7 @@ func rootRun(cmd *cobra.Command, args []string) {
 		}
 	}
 
-	_, err = MysqlExec(mysqlconnection, "update configuration set value = 'false'  where name = 'ca.plugin.root.auth.strictness';")
+	_, err = MysqlExec(mydb, "update configuration set value = 'false'  where name = 'ca.plugin.root.auth.strictness';")
 	if err != nil {
 		Logger.Error("Failed update ca.plugin.root.auth.strictness to false, error: ", err)
 	}
@@ -135,7 +122,6 @@ func rootRun(cmd *cobra.Command, args []string) {
 		if err != nil {
 			Logger.Errorf("can't connect to Mysqldb at %s: %v", err, mysqlHost)
 		} else {
-			//	var uuids []string
 			var guids []string
 			rows, err := mysqlconnection.Query("SELECT guid FROM host")
 			if err != nil {
@@ -153,9 +139,6 @@ func rootRun(cmd *cobra.Command, args []string) {
 				log.Fatal(err)
 			}
 
-			//fmt.Println("UUIDs:", guids)
-
-			// set new variable
 			for _, guid := range guids {
 				/* 				newUuid, _ := uuid.NewRandom()
 				   				newUuidString := newUuid.String()
@@ -186,16 +169,13 @@ func rootRun(cmd *cobra.Command, args []string) {
 		defer mysqlconnection.Close()
 	}
 	sched.Every(runInterval).ESeconds().Run(job)
+
+	defer mydb.Close()
 	// Keep the program from not exiting.
-	defer mysqlconnection.Close()
 	runtime.Goexit()
 }
 
 func MysqlExec(database *sql.DB, query string) (sql.Result, error) {
-	//doc_type := 0
-	//query := fmt.Sprintf("UPDATE history SET request_datetime = DATE_ADD(request_datetime, INTERVAL 7 HOUR) WHERE doc_type=%d AND request_datetime BETWEEN '2024-02-01 00:00:00' AND '2024-02-20 23:59:59'", doc_type)
-
-	//fmt.Println(query)
 	Result, err := database.Exec(query)
 	if err != nil {
 		return nil, err
