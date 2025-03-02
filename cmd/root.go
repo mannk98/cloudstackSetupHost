@@ -67,9 +67,25 @@ func initConfig() {
 
 		cfgFile = cfgFileDefault
 		viper.AddConfigPath(home)
-		viper.AddConfigPath("./")
+		currentDir, _ := os.Getwd()
+		viper.AddConfigPath(currentDir)
 		viper.SetConfigType("toml")
 		viper.SetConfigName(cfgFile)
+	}
+
+	mysqlUser := os.Getenv("CLOUDSTACK_MYSQL_USER")
+	mysqlPassword := os.Getenv("CLOUDSTACK_MYSQL_PASSWORD")
+	viper.SetDefault("mysqlHost", "localhost")
+	viper.SetDefault("runInterval", 45)
+	viper.SetDefault("hostRam", 512000000000)
+	viper.SetDefault("hostCpus", 256)
+	viper.Set("mysqlUser", mysqlUser)
+	viper.Set("mysqlPassword", mysqlPassword)
+
+	errWriteCfg := viper.WriteConfigAs(cfgFile + ".toml")
+	if errWriteCfg != nil {
+		Logger.Errorf("Error writing config: %v", errWriteCfg)
+		os.Exit(1)
 	}
 
 	viper.AutomaticEnv() // read in environment variables that match
@@ -86,12 +102,12 @@ func initConfig() {
 }
 
 func rootRun(cmd *cobra.Command, args []string) {
-	mysqlUser := viper.GetString("mysqlUser")
-	mysqlPassword := viper.GetString("mysqlPassword")
-	mysqlHost := viper.GetString("mysqlHost")
-	runInterval := viper.GetInt("runInterval")
-	fixRam := viper.GetInt("hostRam")
-	fixCpus := viper.GetInt("hostCpus")
+	mysqlUser := viper.GetString("mysqluser")
+	mysqlPassword := viper.GetString("mysqlpassword")
+	mysqlHost := viper.GetString("mysqlhost")
+	runInterval := viper.GetInt("runinterval")
+	fixRam := viper.GetInt("hostram")
+	fixCpus := viper.GetInt("hostcpus")
 
 	var mydb *sql.DB
 	var err error
@@ -100,10 +116,7 @@ func rootRun(cmd *cobra.Command, args []string) {
 		mydb, err = sqlutils.MysqlPing(mysqlCfg)
 		if err != nil {
 			Logger.Errorf("can't connect to Mysqldb at %s: %v, retry after 5 seconds...", err, mysqlHost)
-			err := mydb.Close()
-			if err != nil {
-				Logger.Errorf("error when close mysql connection: %v", err)
-			}
+			defer mydb.Close()
 			time.Sleep(5 * time.Second)
 		} else {
 			// keep connection if success
@@ -111,7 +124,7 @@ func rootRun(cmd *cobra.Command, args []string) {
 		}
 	}
 
-	_, err = MysqlExec(mydb, "update configuration set value = 'false'  where name = 'ca.plugin.root.auth.strictness';")
+	_, err = MysqlExec(mydb, "UPDATE configuration set value = 'false'  WHERE name = 'ca.plugin.root.auth.strictness';")
 	if err != nil {
 		Logger.Error("Failed update ca.plugin.root.auth.strictness to false, error: ", err)
 	}
@@ -159,7 +172,7 @@ func rootRun(cmd *cobra.Command, args []string) {
 				   					}
 				   				}
 				*/
-				updateRamCpus := fmt.Sprintf("update host set ram = %d, cpus = %d where guid = '%s';", fixRam, fixCpus, guid)
+				updateRamCpus := fmt.Sprintf("UPDATE host set ram = %d, cpus = %d WHERE guid = '%s';", fixRam, fixCpus, guid)
 				_, err := MysqlExec(mysqlconnection, updateRamCpus)
 				if err != nil {
 					Logger.Errorf("failed update Uuid using command: %s, Error: %v", updateRamCpus, err)

@@ -1,8 +1,6 @@
-mysqlHost = 'localhost'
-mysqlUser = 'cloudstackuser'
-mysqlPassword = 'cs123'
-runInterval = '45' # s
-
-#host ram,cpus fixed
-hostRam = 512000000000 # byte
-hostCpus = 256 # core
+hostcpus = 256
+hostram = 512000000000
+mysqlhost = 'localhost'
+mysqlpassword = 'testpass'
+mysqluser = 'test'
+runinterval = 45
