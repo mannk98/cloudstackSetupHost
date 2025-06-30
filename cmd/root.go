@@ -24,7 +24,7 @@ var (
 	LogLevel         = log.ErrorLevel
 	LogFile          = "cloudstackSetupHost.log"
 	cfgFileDefault   = ".cloudstackSetupHost"
-	AlreadySetupFile = "~/.CloudstackSetupHost_HostAlreadySetup"
+	AlreadySetupFile = ".cloudstackSetupHost_HostAlreadySetup"
 )
 
 var rootCmd = &cobra.Command{
@@ -72,8 +72,6 @@ func initConfig() {
 	mysqlPassword := os.Getenv("CLOUDSTACK_MYSQL_PASSWORD")
 	viper.SetDefault("mysqlHost", "localhost")
 	viper.SetDefault("runInterval", 60)
-	viper.SetDefault("hostRam", 256000000000)
-	viper.SetDefault("hostCpus", 256)
 	viper.Set("mysqlUser", mysqlUser)
 	viper.Set("mysqlPassword", mysqlPassword)
 

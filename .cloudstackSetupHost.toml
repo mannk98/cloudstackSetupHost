@@ -1,4 +1,4 @@
 mysqlhost = 'localhost'
-mysqlpassword = 'testpass'
-mysqluser = 'test'
+mysqlpassword = ''
+mysqluser = ''
 runinterval = 60
