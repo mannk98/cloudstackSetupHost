@@ -136,21 +136,27 @@ func rootRun(cmd *cobra.Command, args []string) {
 			Logger.Errorf("can't connect to Mysqldb at %s: %v", err, mysqlHost)
 		} else {
 			var guids []string
-			rows, err := mydb.Query("SELECT guid FROM host")
-			if err != nil {
-				Logger.Error(err)
+			rows, errQuery := mydb.Query("SELECT guid FROM host")
+			if errQuery != nil {
+				Logger.Error(errQuery)
 			}
 			defer rows.Close()
 			for rows.Next() {
-				var uuid string
-				if err := rows.Scan(&uuid); err != nil {
-					Logger.Error(err)
+				var uuid sql.NullString
+				if errScan := rows.Scan(&uuid); errScan != nil {
+					Logger.Errorf("Error scanning row: %v", errScan)
+					continue
+				}
+				// Skip if UUID is NULL
+				if !uuid.Valid {
+					Logger.Debug("Skipping NULL UUID")
+					continue
 				}
 				// find Hosts only
-				if strings.Contains(uuid, "StorageResource") || strings.Contains(uuid, "ProxyResource") {
+				if strings.Contains(uuid.String, "StorageResource") || strings.Contains(uuid.String, "ProxyResource") {
 					continue
-				} else if strings.Contains(uuid, "LibvirtComputingResource") {
-					guids = append(guids, uuid)
+				} else if strings.Contains(uuid.String, "LibvirtComputingResource") {
+					guids = append(guids, uuid.String)
 				}
 			}
 			if err := rows.Err(); err != nil {
