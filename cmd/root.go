@@ -8,10 +8,9 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"strings"
 	"time"
 
-	"github.com/mannk98/goutils/sqlutils"
-	"github.com/mannk98/goutils/utils"
 	log "github.com/sirupsen/logrus"
 	"github.com/sonnt85/gosutils/sched"
 
@@ -20,22 +19,18 @@ import (
 )
 
 var (
-	cfgFile        string
-	Logger         = log.New()
-	LogLevel       = log.ErrorLevel
-	LogFile        = "cloudstackSetupHost.log"
-	cfgFileDefault = ".cloudstackSetupHost"
+	cfgFile          string
+	Logger           = log.New()
+	LogLevel         = log.ErrorLevel
+	LogFile          = "cloudstackSetupHost.log"
+	cfgFileDefault   = ".cloudstackSetupHost"
+	AlreadySetupFile = "~/.CloudstackSetupHost_HostAlreadySetup"
 )
 
 var rootCmd = &cobra.Command{
 	Use:   "cloudstackSetupHost",
-	Short: "A brief description of your application",
-	Long: `A longer description that spans multiple lines and likely contains
-examples and usage of using your application. For example:
-
-Cobra is a CLI library for Go that empowers applications.
-This application is a tool to generate the needed files
-to quickly create a Cobra application.`,
+	Short: "Cloudstack Setup Host",
+	Long:  ``,
 
 	Run: rootRun,
 }
@@ -48,7 +43,7 @@ func Execute() {
 }
 
 func init() {
-	utils.InitLogger(LogFile, Logger, LogLevel)
+	InitLogger(LogFile, Logger, LogLevel)
 	cobra.OnInitialize(initConfig)
 
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.cloudstackSetupHost.toml)")
@@ -76,8 +71,8 @@ func initConfig() {
 	mysqlUser := os.Getenv("CLOUDSTACK_MYSQL_USER")
 	mysqlPassword := os.Getenv("CLOUDSTACK_MYSQL_PASSWORD")
 	viper.SetDefault("mysqlHost", "localhost")
-	viper.SetDefault("runInterval", 45)
-	viper.SetDefault("hostRam", 512000000000)
+	viper.SetDefault("runInterval", 60)
+	viper.SetDefault("hostRam", 256000000000)
 	viper.SetDefault("hostCpus", 256)
 	viper.Set("mysqlUser", mysqlUser)
 	viper.Set("mysqlPassword", mysqlPassword)
@@ -102,22 +97,30 @@ func initConfig() {
 }
 
 func rootRun(cmd *cobra.Command, args []string) {
+	errCreateFile := FileCreate(AlreadySetupFile)
+	if errCreateFile != nil {
+		if os.IsExist(errCreateFile) {
+			Logger.Info("File ~/.CloudstackSetupHost_HostAlreadySetup already exists, exiting...")
+		} else {
+			Logger.Error("Error creating file: ", errCreateFile)
+			os.Exit(1)
+		}
+	}
+
 	mysqlUser := viper.GetString("mysqluser")
 	mysqlPassword := viper.GetString("mysqlpassword")
 	mysqlHost := viper.GetString("mysqlhost")
 	runInterval := viper.GetInt("runinterval")
-	fixRam := viper.GetInt("hostram")
-	fixCpus := viper.GetInt("hostcpus")
 
 	var mydb *sql.DB
 	var err error
-	mysqlCfg := sqlutils.MysqlInitConfig(mysqlUser, mysqlPassword, mysqlHost, "3306", "cloud")
+	mysqlCfg := MysqlInitConfig(mysqlUser, mysqlPassword, mysqlHost, "3306", "cloud")
 	for {
-		mydb, err = sqlutils.MysqlPing(mysqlCfg)
+		mydb, err = MysqlPing(mysqlCfg)
 		if err != nil {
-			Logger.Errorf("can't connect to Mysqldb at %s: %v, retry after 5 seconds...", err, mysqlHost)
+			Logger.Errorf("can't connect to Mysqldb at %s: %v, retry after 10 seconds...", err, mysqlHost)
 			defer mydb.Close()
-			time.Sleep(5 * time.Second)
+			time.Sleep(10 * time.Second)
 		} else {
 			// keep connection if success
 			break
@@ -130,13 +133,12 @@ func rootRun(cmd *cobra.Command, args []string) {
 	}
 
 	job := func(sched *sched.Job) {
-		mysqlCfg := sqlutils.MysqlInitConfig(mysqlUser, mysqlPassword, mysqlHost, "3306", "cloud")
-		mysqlconnection, err := sqlutils.MysqlPing(mysqlCfg)
+
 		if err != nil {
 			Logger.Errorf("can't connect to Mysqldb at %s: %v", err, mysqlHost)
 		} else {
 			var guids []string
-			rows, err := mysqlconnection.Query("SELECT guid FROM host")
+			rows, err := mydb.Query("SELECT guid FROM host")
 			if err != nil {
 				Logger.Error(err)
 			}
@@ -146,12 +148,22 @@ func rootRun(cmd *cobra.Command, args []string) {
 				if err := rows.Scan(&uuid); err != nil {
 					Logger.Error(err)
 				}
-				guids = append(guids, uuid)
+				// find Hosts only
+				if strings.Contains(uuid, "StorageResource") || strings.Contains(uuid, "ProxyResource") {
+					continue
+				} else if strings.Contains(uuid, "LibvirtComputingResource") {
+					guids = append(guids, uuid)
+				}
 			}
 			if err := rows.Err(); err != nil {
 				log.Fatal(err)
 			}
 
+			listSetupHost, errRead := os.ReadFile(AlreadySetupFile)
+			if errRead != nil {
+				Logger.Errorf("Error reading file %s: %v", AlreadySetupFile, errRead)
+				os.Exit(1)
+			}
 			for _, guid := range guids {
 				/* 				newUuid, _ := uuid.NewRandom()
 				   				newUuidString := newUuid.String()
@@ -172,26 +184,47 @@ func rootRun(cmd *cobra.Command, args []string) {
 				   					}
 				   				}
 				*/
-				updateRamCpus := fmt.Sprintf("UPDATE host set ram = %d, cpus = %d WHERE guid = '%s';", fixRam, fixCpus, guid)
-				_, err := MysqlExec(mysqlconnection, updateRamCpus)
-				if err != nil {
-					Logger.Errorf("failed update Uuid using command: %s, Error: %v", updateRamCpus, err)
+				if !strings.Contains(string(listSetupHost), guid) {
+					getCurrentRam := fmt.Sprintf("SELECT ram FROM host WHERE guid = '%s';", guid)
+					getCurrentCpus := fmt.Sprintf("SELECT cpus FROM host WHERE guid = '%s';", guid)
+					var currentRam, currentCpus int
+					errRam := mydb.QueryRow(getCurrentRam).Scan(&currentRam)
+					if errRam != nil {
+						Logger.Errorf("Failed to get current RAM for host %s using command: %s, Error: %v", guid, getCurrentRam, errRam)
+						continue
+					}
+					errCpus := mydb.QueryRow(getCurrentCpus).Scan(&currentCpus)
+					if errCpus != nil {
+						Logger.Errorf("Failed to get current CPU for host %s using command: %s, Error: %v", guid, getCurrentCpus, errCpus)
+						continue
+					}
+					Logger.Infof("Current RAM for host %s is %d, current CPU is %d", guid, currentRam, currentCpus)
+
+					updateRam := currentRam * 2
+					updateCpus := currentCpus * 3
+					updateRamCpus := fmt.Sprintf("UPDATE host set ram = %d, cpus = %d WHERE guid = '%s';", updateRam, updateCpus, guid)
+					_, errExec := MysqlExec(mydb, updateRamCpus)
+					if errExec != nil {
+						Logger.Errorf("Failed to update RAM and CPU for host %s using command: %s, Error: %v", guid, updateRamCpus, errExec)
+						continue
+					} else {
+						Logger.Infof("Host %s has been updated with fixed RAM and CPU.", guid)
+					}
+
+					errWrite := AppendLine(AlreadySetupFile, guid)
+					if errWrite != nil {
+						Logger.Errorf("Error writing to file %s: %v", AlreadySetupFile, errWrite)
+					} else {
+						Logger.Infof("Host %s has been setup with fixed RAM and CPU.", guid)
+					}
 				}
 			}
 		}
-		defer mysqlconnection.Close()
 	}
+
 	sched.Every(runInterval).ESeconds().Run(job)
 
 	defer mydb.Close()
 	// Keep the program from not exiting.
 	runtime.Goexit()
-}
-
-func MysqlExec(database *sql.DB, query string) (sql.Result, error) {
-	Result, err := database.Exec(query)
-	if err != nil {
-		return nil, err
-	}
-	return Result, err
 }

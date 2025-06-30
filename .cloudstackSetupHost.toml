@@ -1,6 +1,4 @@
-hostcpus = 256
-hostram = 512000000000
 mysqlhost = 'localhost'
 mysqlpassword = 'testpass'
 mysqluser = 'test'
-runinterval = 45
+runinterval = 60
